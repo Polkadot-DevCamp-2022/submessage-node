@@ -270,8 +270,15 @@ impl pallet_template::Config for Runtime {
 	type Event = Event;
 }
 
+parameter_types! {
+	pub const MaxMessageLength: u32 = 256; // bytes
+	pub const MaxNonceLength: u32 = 24; // bytes
+}
+
 impl pallet_messaging::Config for Runtime {
 	type Event = Event;
+	type MaxMessageLength = MaxMessageLength;
+	type MaxNonceLength = MaxNonceLength;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
