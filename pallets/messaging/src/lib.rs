@@ -1,6 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 pub use pallet::*;
 use sp_std::vec::Vec;
+use sp_std::collections::vec_deque::VecDeque;
 
 #[frame_support::pallet]
 pub mod pallet {
@@ -38,6 +39,8 @@ pub mod pallet {
 		type MaxMessageLength: Get<u32>;
 		#[pallet::constant]
 		type MaxNonceLength: Get<u32>;
+		#[pallet::constant]
+		type MaxRecentConversations: Get<u32>;
 	}
 
 	#[pallet::pallet]
@@ -74,8 +77,8 @@ pub mod pallet {
 	>;
 
 	#[pallet::storage]
-	#[pallet::getter(fn conversations_by_account_id)]
-	pub type ChannelIdsByAccountId<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, Vec<ChannelId>>;
+	#[pallet::getter(fn account_ids_by_account_id)]
+	pub type AccountIdsByAccountId<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, VecDeque<T::AccountId>>;
 
 	#[pallet::storage]
 	#[pallet::getter(fn common_key_by_account_id_channel_id)]
@@ -178,10 +181,40 @@ pub mod pallet {
 			message_ids.push(next_message_id);
 			<MessageIdsByChannelId<T>>::insert(channel_id, message_ids);
 
+			let max_recent_conversations = T::MaxRecentConversations::get() as usize;
+			Self::update_recent_conversations(from.clone(), to.clone(), max_recent_conversations);
+			Self::update_recent_conversations(to.clone(), from.clone(), max_recent_conversations);
+
 			<NextMessageId<T>>::put(next_message_id + 1);
 			Self::deposit_event(Event::MessageCreated(channel_id, next_message_id));
 
 			Ok(().into())
 		}
+	}
+}
+
+impl<T: Config> Pallet<T> {
+	fn update_recent_conversations(who: T::AccountId, partner: T::AccountId, max_recent_conversations: usize) {
+		<AccountIdsByAccountId<T>>::mutate(who, |maybe_account_ids| {
+			let mut recent_account_ids: VecDeque<T::AccountId> = match maybe_account_ids {
+				Some(channel_ids) => {
+					let recent_account_ids: VecDeque<T::AccountId> = channel_ids
+						.iter()
+						.filter(|id| **id != partner)
+						.cloned()
+						.collect();
+
+					recent_account_ids
+				},
+				None => VecDeque::new()
+			};
+
+			recent_account_ids.push_front(partner);
+			while recent_account_ids.len() > max_recent_conversations {
+				recent_account_ids.pop_back();
+			}
+
+			*maybe_account_ids = Some(recent_account_ids);
+		});
 	}
 }
